@@ -1,0 +1,641 @@
+---
+title: "Lauryna_plots"
+editor: visual
+execute: 
+  echo: false
+  warning: false
+  error: false
+format: 
+  pdf:
+    toc: true
+    number-sections: true
+    colorlinks: true
+    fig-width: 6
+    fig-height: 4
+---
+
+```{r}
+library(dplyr)
+library(openxlsx)
+library(readxl)
+library(ggsurvfit)
+library(tidycmprsk)
+library(survival)
+library(survminer)
+library(autoReg)
+library(ggstatsplot)
+library(tidyr)
+library(DescTools)
+library(forcats)
+library(ggpubr)
+library(rstatix)
+library(agricolae)
+library(EnvStats)
+library(ggsci)
+```
+
+```{r}
+theme_set(theme_bw()+
+            theme(panel.grid = element_blank()))
+
+HNF1B_simple <- read_excel("C:/Coding/studentai/Lauryna/HNF1B_curated Nr.2.xlsx")
+
+HNF1B_simple$diagnosis <- 1
+
+HNF1B_simple$age_pre <- as.numeric(HNF1B_simple$age_pre)
+HNF1B_simple$age_post <- as.numeric(HNF1B_simple$age_post)
+
+HNF1B_simple <- HNF1B_simple %>%
+  mutate(mutacijos_tipas = ifelse(grepl('17q12', HNF1B.mutation..localization..nucleotide.and.amino.acid.change., ignore.case = TRUE), 'cdeletion', mutacijos_tipas))
+
+```
+
+```{r}
+HNF1B_simple<-HNF1B_simple %>%
+  mutate(CKD.stage...7 = ifelse(CKD.stage...7 == '3b (Schwartz)', '3.0', CKD.stage...7)) %>%
+  mutate(CKD.stage...7 = ifelse(CKD.stage...7 == 'IIIa', '3.0', CKD.stage...7)) %>%
+  mutate(CKD.stage...7 = ifelse(CKD.stage...7 == 'IIIb', '3.0', CKD.stage...7)) %>%
+  mutate(CKD.stage...7 = ifelse(CKD.stage...7 == '3a', '3.0', CKD.stage...7)) %>%
+  mutate(CKD.stage...7 = ifelse(CKD.stage...7 == '3b', '3.0', CKD.stage...7)) %>%
+  mutate(CKD.stage...7 = ifelse(CKD.stage...7 == '0.0', NA, CKD.stage...7)) %>%
+  mutate(CKD.stage...7 = as.numeric(CKD.stage...7))
+
+HNF1B_simple <- HNF1B_simple %>%
+  mutate(CKD.stage...20 = ifelse(CKD.stage...20 == '3b (Schwartz)', '3.0', CKD.stage...20)) %>%
+  mutate(CKD.stage...20 = ifelse(CKD.stage...20 == 'IIIa', '3.0', CKD.stage...20)) %>%
+  mutate(CKD.stage...20 = ifelse(CKD.stage...20 == 'IIIb', '3.0', CKD.stage...20)) %>%
+  mutate(CKD.stage...20 = ifelse(CKD.stage...20 == '3a', '3.0', CKD.stage...20)) %>%
+  mutate(CKD.stage...20 = ifelse(CKD.stage...20 == '3b', '3.0', CKD.stage...20)) %>%
+  mutate(CKD.stage...20 = ifelse(CKD.stage...20 == '0.0', NA, CKD.stage...20)) %>%
+  mutate(CKD.stage...20 = as.numeric(CKD.stage...20))
+```
+
+# Total Incidence
+
+```{r}
+
+fit <- survfit(Surv(age_pre, diagnosis) ~ 1, data = HNF1B_simple)
+
+fit %>% 
+  ggsurvfit(type='risk') +
+  labs(
+    x = 'Age at diagnosis',
+    y = "Cumulative Incidence",
+    title = "HNF1β nephropathy cumulative incidence plot."
+  )+
+  add_confidence_interval()+
+  add_risktable()
+
+ggsave('Survival_all.png', width = 10, height = 5)
+```
+
+0.5 incidence at 11 years. 50% atvejų nustatoma ties 11 metų.
+
+# 5th CKD stage probability
+
+```{r}
+HNF1B_simple <- HNF1B_simple %>%
+  mutate(severe_post = ifelse(CKD.stage...20 == 5, 1, 0)) %>%
+  mutate(severe_pre = ifelse(CKD.stage...7 == 5, 1, 0))
+
+
+fit <- survfit(Surv(age_post, severe_post) ~ 1, data = HNF1B_simple)
+
+fit %>% 
+  ggsurvfit() +
+  labs(
+    x = "Age at last follow-up",
+    y = "Probability of not developing\n5th stage CKD",
+    title = "Probability of not developing 5th stage CKD\nduring HNF1β nephropathy follow-up period."
+  )+
+  add_confidence_interval()+
+  add_risktable()
+
+ggsave('not_5th_stage.png', width = 10, height = 5)
+```
+
+# General mutation types Incidence
+
+```{r}
+
+HNF1B_survival <- HNF1B_simple %>%
+  filter(!(mutacijos_tipas %in% c(NA, 'insertion', 'heterozygous intragenic mutation', 'frameshift', 'duplication', '?deletion'))) %>%
+  filter(!is.na(mutacijos_tipas))
+
+HNF1B_survival %>%
+  group_by(mutacijos_tipas) %>%
+  summarise(
+    n=n()
+  )
+
+fit_mult <- survfit2(Surv(age_pre, diagnosis) ~ mutacijos_tipas, data = HNF1B_survival)
+
+fit_mult %>% 
+  ggsurvfit(type='risk', lwd=1) +
+  labs(
+    x = "Age at diagnosis",
+    y = "Cumulative incidence",
+    title = "Cumulative incidence of HNF1β nephropathy mutation types."
+  )+
+  theme(legend.position = "right")+
+  scale_color_jco(labels = c("c_deletion, n=51", "missense, n=85", "nonsense, n=43", 'p_deletion, n=60', 'splice site, n=30', 'w_deletion, n=130'))
+
+ggsave('Survival_mutations.png', width = 10, height = 5)
+  
+```
+
+# GFG scatterplot
+
+## eGFR \~Amžius
+
+```{r}
+
+extract_element_end <- function(string) {
+  split_string <- strsplit(string, "[\\,]")
+  element <- split_string[[1]][1]
+  return(element)
+}
+
+HNF1B_simple$eGFR_pre <-as.numeric(lapply(HNF1B_simple$eGFR..mL.min.1.73m2....6, extract_element_end))
+
+HNF1B_simple$eGFR_post <- as.numeric(lapply(HNF1B_simple$eGFR..mL.min.1.73m2....19, extract_element_end))
+
+HNF1B_simple_prelm <- HNF1B_simple %>%
+  filter(!is.na(eGFR_pre)) %>%
+  filter(!is.na(age_pre)) 
+
+r <- round(cor(HNF1B_simple_prelm$age_pre,HNF1B_simple_prelm$eGFR_pre), 2)
+p <- cor.test(HNF1B_simple_prelm$age_pre,HNF1B_simple_prelm$eGFR_pre)$p.value
+
+HNF1B_simple_prelm %>%
+  dim()
+
+HNF1B_simple_prelm %>%
+  filter(!is.na(eGFR..mL.min.1.73m2....6)) %>%
+  select(age_pre, eGFR_pre) %>%
+  ggplot(aes(x=age_pre, y=eGFR_pre))+
+  geom_point()+
+  labs(
+    y = 'eGFR, ml/min/1.73m\u00B2.',
+    x = 'Age at diagnosis',
+    title = "Scatter plot between age at HNF1β nephropathy diagnosis and eGFR (n = 294)."
+  )+
+  geom_smooth(method = 'lm', formula = y~x, se=FALSE)+
+  annotate("text", x=40, y=150, label=paste0("Pearson's R = ", r), hjust=0)+
+  annotate("text", x=40, y=135, label="P < 0.001", hjust=0)
+
+ggsave('scatter_all.png', width = 10, height = 5)
+```
+
+```{r}
+lm_fit <- lm(eGFR_pre ~ age_pre, data=HNF1B_simple)
+summary(lm_fit)
+```
+
+Visgi eGFR daugiausiai priklauso nuo CKD stadijos
+
+```{r}
+lm_fit <- lm(eGFR_pre ~ age_pre + CKD.stage...7, data=HNF1B_simple)
+summary(lm_fit)
+```
+
+```{r}
+lm_fit <- lm(eGFR_pre ~ CKD.stage...7, data=HNF1B_simple)
+summary(lm_fit)
+```
+
+## eGFR followup \~ Amžiaus skirtumas
+
+```{r}
+HNF1B_simple_difflm <- HNF1B_simple %>%
+  filter(!is.na(eGFR_post)) %>%
+  filter(!is.na(age_pre)) %>%
+  filter(!is.na(age_post)) %>%
+  mutate(age_diff = age_post - age_pre)
+
+HNF1B_simple_difflm %>%
+  dim()
+
+r <- round(cor(HNF1B_simple_difflm$age_diff,HNF1B_simple_difflm$eGFR_post), 2)
+p <- cor.test(HNF1B_simple_difflm$age_diff,HNF1B_simple_difflm$eGFR_post)$p.value
+HNF1B_simple_difflm %>%
+  filter(!is.na(eGFR_post)) %>%
+  filter(!is.na(age_pre)) %>%
+  filter(!is.na(age_post)) %>%
+  select(age_diff, eGFR_post) %>%
+  ggplot(aes(x=age_diff, y=eGFR_post))+
+  geom_point()+
+  labs(
+    x = 'years between diagnosis and last follow-up',
+    y = 'eGFR, ml/min/1.73m\u00B2.',
+    title = "Scatter plot of eGFR and years between HNF1β nephropathy diagnosis and last follow-up (n = 97).",
+  )+
+  geom_smooth(method = 'lm', formula = y~x, se=FALSE)+
+  annotate("text", x=15, y=100, label=paste0("Pearson's R = ", r), hjust=0) +
+  annotate("text", x=15, y=90, label="P = 0.001", hjust=0)
+
+ggsave('scatter_change.png', width = 10, height = 5)
+```
+
+# HNF1B mutacijos tipo įtaka CKD stadijai
+
+Visos mutacijos
+
+```{r}
+HNF1B_simple %>%
+  group_by(mutacijos_tipas) %>%
+  summarise(
+    n = n()
+  )
+```
+
+Atrinktos mutacijos
+
+```{r}
+HNF1B_simple %>%
+  select(mutacijos_tipas, CKD.stage...7) %>%
+  filter(!(mutacijos_tipas %in% c(NA, 'insertion', 'heterozygous intragenic mutation', 'frameshift', 'duplication'))) %>%
+  na.omit() %>%
+  group_by(mutacijos_tipas) %>%
+  summarise(
+    n=n(),
+    mean = mean(CKD.stage...7),
+    sd = sd(CKD.stage...7)
+  )
+
+```
+
+```{r output = FALSE}
+bxp <- HNF1B_simple %>%
+  filter(!(mutacijos_tipas %in% c(NA, 'insertion', 'heterozygous intragenic mutation', 'frameshift', 'duplication'))) %>%
+  select(mutacijos_tipas, CKD.stage...7) %>%
+  group_by(mutacijos_tipas) %>%
+  ggboxplot(x='mutacijos_tipas', y='CKD.stage...7', fill='mutacijos_tipas')
+bxp
+```
+
+```{r}
+HNF1B_simple %>%
+  select(mutacijos_tipas, CKD.stage...7) %>%
+  filter(!(mutacijos_tipas %in% c(NA, 'insertion', 'heterozygous intragenic mutation', 'frameshift', 'duplication', '?deletion'))) %>%
+  na.omit() %>%
+  select(mutacijos_tipas, CKD.stage...7) %>%
+  group_by(mutacijos_tipas) %>%
+  summarise(
+    mean = mean(CKD.stage...7),
+    sd = sd(CKD.stage...7)
+  ) %>%
+  ggplot(aes(x=mutacijos_tipas, y=mean, fill=mutacijos_tipas))+
+  geom_bar(stat = 'identity')+
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
+                 position=position_dodge(.9))+
+  labs(
+    x = NULL,
+    y = "CKD Stage",
+    title = "Different CKD stage of patients according to the causative mutation type at diagnosis time of HNF1β nephropathy.",
+    fill = "Mutation type"
+  )+
+  scale_fill_jco(labels = c("c_deletion, n=38", "missense, n=58", "nonsense, n=37", 'p_deletion, n=48', 'splice site, n=25', 'w_deletion, n=62'))+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+ggsave('bar_mutations.png', width = 10, height = 5)
+  
+
+```
+
+## ANOVA testas
+
+```{r}
+
+anova_data <- HNF1B_simple %>%
+  select(mutacijos_tipas, CKD.stage...7) %>%
+  filter(!(mutacijos_tipas %in% c(NA, 'insertion', 'heterozygous intragenic mutation', 'frameshift', 'duplication', '?deletion'))) %>%
+  na.omit() %>%
+  select(mutacijos_tipas, CKD.stage...7)
+
+aov.m <- aov(CKD.stage...7 ~ mutacijos_tipas, data=anova_data)
+summary(aov.m)
+```
+
+## Tukey post-hoc (pairwise comparisons)
+
+```{r}
+TukeyHSD(aov.m)
+```
+
+# CKD stage
+
+## CKD diagnozės metu duomenys
+
+```{r}
+
+HNF1B_simple %>%
+  filter(!(CKD.stage...7 == 0)) %>%
+  filter(!is.na(CKD.stage...7)) %>%
+  group_by(CKD.stage...7) %>%
+  summarise(
+    n=n()
+  )
+
+
+```
+
+## Pacientai su CKD duomenim diagnozes ir follow-up metu
+
+### diagnozes
+
+```{r}
+HNF1B_simple %>%
+  filter(!(CKD.stage...7 == 0)) %>%
+  filter(!is.na(CKD.stage...7)) %>%
+  filter(!is.na(CKD.stage...20)) %>%
+  group_by(CKD.stage...7) %>%
+  summarise(
+    n=n()
+  )
+```
+
+### follow-up
+
+```{r}
+HNF1B_simple %>%
+  filter(!(CKD.stage...7 == 0)) %>%
+  filter(!is.na(CKD.stage...7)) %>%
+  filter(!is.na(CKD.stage...20)) %>%
+  group_by(CKD.stage...20) %>%
+  summarise(
+    n=n()
+  )
+```
+
+### Pie charts
+
+```{r}
+
+set.seed(1)
+
+pie.chart.data <- HNF1B_simple %>%
+  filter(!(CKD.stage...7 == 0)) %>%
+  filter(!is.na(CKD.stage...7)) %>%
+  filter(!is.na(CKD.stage...20)) %>%
+  mutate(CKD_pre = as.factor(CKD.stage...7)) %>%
+  mutate(CKD_post = as.factor(CKD.stage...20)) %>%
+  mutate(mutacijos_tipas = as.factor(mutacijos_tipas)) %>%
+  select(Patient.ID, CKD_pre, CKD_post) %>%
+  pivot_longer(c(CKD_pre, CKD_post), names_to = 'CKD_time', values_to = 'CKD_stage') %>%
+  mutate(CKD_time= as.factor(CKD_time))
+  # group_by(CKD_stage, CKD_time) %>%
+  # summarise(
+  #   n=n()
+  # ) %>%
+
+g1 <- ggpiestats(data = filter(pie.chart.data, CKD_time == 'CKD_pre'),
+                 x=CKD_stage,
+                 results.subtitle = FALSE,
+                 label.repel = TRUE,
+                 title='A. CKD at diagnosis',
+                 label='both',
+                 legend.title = "CKD Stage") + 
+  scale_fill_manual(values=pal_jco("default")(10))
+g2 <- ggpiestats(data = filter(pie.chart.data, CKD_time == 'CKD_post'),
+                 x=CKD_stage,
+                 results.subtitle = FALSE,
+                 label.repel = TRUE,
+                 title='B. CKD at last follow-up',
+                 label='both',
+                 legend.title = "CKD Stage")+ 
+  scale_fill_manual(values=pal_jco("default")(10))
+
+
+cqt <- CochranQTest(CKD_stage ~ CKD_time| Patient.ID, data=pie.chart.data)
+
+cqt
+
+plot1 <- ggarrange(g1, g2, ncol=2, nrow=1, common.legend = TRUE, legend='right')
+
+plot1 <- set_palette(plot1, pal_jco("default")(10))
+
+plot2 <- annotate_figure(plot1, bottom = text_grob("Cochran's Q test: X\u00B2(1)=15.114, p < 0.001; n = 68", hjust=0, vjust=-0.7))
+
+plot3 <- annotate_figure(plot2, top = text_grob("nephropathy diagnosis and last follow-up (n = 68).", face='bold', hjust = 0.918, vjust=0.2, size = 16))
+
+plot3 <- annotate_figure(plot3, top = text_grob("Changes in proportions of patients with different CKD stages at HNF1β", face='bold', hjust = 0.65, vjust=0.2, size = 16))
+
+plot3
+
+ggsave('pie_charts.png', plot=plot3, height = 5, width = 10, bg = 'white')
+```
+
+### Histogram
+
+Žiūrime kaip keičiasi CKD lygis nuo diagnosis iki follow-up
+
+```{r}
+fal = -3:3
+
+HNF1B_simple %>%
+  filter(!(CKD.stage...7 == 0)) %>%
+  filter(!is.na(CKD.stage...7)) %>%
+  filter(!is.na(CKD.stage...20)) %>%
+  mutate(CKD_diff = CKD.stage...20-CKD.stage...7) %>%
+  mutate(mutacijos_tipas = as.factor(mutacijos_tipas)) %>%
+  select(Patient.ID, CKD_diff) %>%
+  ggplot(aes(CKD_diff))+
+  geom_bar()+
+  scale_x_continuous('Change in CKD stage', breaks= fal)+
+  labs(
+    y = 'Patient count',
+    title = 'CKD severity change from HNF1β nephropathy diagnosis to last follow-up.'
+  )
+
+ggsave('hist_change.png', width = 10, height = 5)
+
+```
+
+# Categorical Data
+
+## Diabetes
+
+```{r}
+HNF1B_simple <- HNF1B_simple %>%
+  mutate(
+  Proteinuria..yes.no..g.l....9 = ifelse(grepl('yes', Proteinuria..yes.no..g.l....9, ignore.case = TRUE), 'yes', 'no'),
+  Diabetes..yes.no..type....10 = ifelse(grepl('yes', Diabetes..yes.no..type....10, ignore.case = TRUE), 'yes', 'no'),
+  Hyperuricemia..yes.no..mg.dL....11 = ifelse(grepl('yes', Hyperuricemia..yes.no..mg.dL....11, ignore.case = TRUE), 'yes', 'no'),
+  Hypomagnesemia..yes.NA..mmol.l. = ifelse(grepl('yes', Hypomagnesemia..yes.NA..mmol.l., ignore.case = TRUE), 'yes', 'no'),
+  HTN..yes.no....8 = ifelse(grepl('yes', HTN..yes.no....8, ignore.case = TRUE), 'yes', 'no')
+         )
+```
+
+```{r}
+library(ggstatsplot)
+proteinuria <- HNF1B_simple %>%
+  select(mutacijos_tipas, Proteinuria..yes.no..g.l....9, Hyperuricemia..yes.no..mg.dL....11, Diabetes..yes.no..type....10, HTN..yes.no....8,Hypomagnesemia..yes.NA..mmol.l.) %>%
+  filter(mutacijos_tipas %in% c('cdeletion', 'wdeletion','pdeletion','missense','nonsense', 'splice')) %>%
+  na.omit() %>%
+  mutate(mutacijos_tipas = as.factor(mutacijos_tipas)) %>%
+  mutate(Proteinuria = as.factor(Proteinuria..yes.no..g.l....9)) %>%
+  mutate(Hyperuricemia = as.factor(Hyperuricemia..yes.no..mg.dL....11)) %>%
+  mutate(Diabetes = as.factor(Diabetes..yes.no..type....10)) %>%
+  mutate(HTN = as.factor(HTN..yes.no....8)) %>%
+  mutate(Hypomagnesemia = as.factor(Hypomagnesemia..yes.NA..mmol.l.))
+
+g1 <- ggstatsplot::ggbarstats(
+  data = proteinuria,
+  x=Diabetes,
+  y=mutacijos_tipas,
+  proportion.test = NULL,
+  package      = "wesanderson",
+  palette      = "Darjeeling2",
+  ggtheme = theme_pubclean(),
+  bf.message=FALSE,
+  messages=FALSE,
+  xlab = "",
+  type='parametric'
+  )
+
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+
+g1 + theme(legend.position = 'right')
+
+ggsave('diabetes.png', width = 6, height=4)
+
+```
+
+## Proteinuria
+
+```{r}
+g1 <- ggstatsplot::ggbarstats(
+  data = proteinuria,
+  x=Proteinuria,
+  y=mutacijos_tipas,
+  proportion.test = NULL,
+  package      = "wesanderson",
+  palette      = "Darjeeling2",
+  ggtheme = theme_pubclean(),
+  bf.message=FALSE,
+  messages=FALSE,
+  xlab = "",
+  type='parametric'
+  )
+
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+
+g1 + theme(legend.position = 'right')
+
+ggsave('proteinuria.png', width = 6, height=4)
+```
+
+## Hyperuricemia
+
+```{r}
+g1 <- ggstatsplot::ggbarstats(
+  data = proteinuria,
+  x=Hyperuricemia,
+  y=mutacijos_tipas,
+  proportion.test = NULL,
+  package      = "wesanderson",
+  palette      = "Darjeeling2",
+  ggtheme = theme_pubclean(),
+  bf.message=FALSE,
+  messages=FALSE,
+  xlab = "",
+  type='parametric'
+  )
+
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+
+g1 + theme(legend.position = 'right')
+
+ggsave('hyperuricemia.png', width = 6, height=4)
+```
+
+## HTN
+
+```{r}
+g1 <- ggstatsplot::ggbarstats(
+  data = proteinuria,
+  x=HTN,
+  y=mutacijos_tipas,
+  proportion.test = NULL,
+  package      = "wesanderson",
+  palette      = "Darjeeling2",
+  ggtheme = theme_pubclean(),
+  bf.message=FALSE,
+  messages=FALSE,
+  xlab = "",
+  type='parametric'
+  )
+
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+
+g1 + theme(legend.position = 'right')
+
+ggsave('HTN.png', width = 6, height=4)
+```
+
+## Hypomagnesemia
+
+```{r}
+g1 <- ggstatsplot::ggbarstats(
+  data = proteinuria,
+  x=Hypomagnesemia,
+  y=mutacijos_tipas,
+  proportion.test = NULL,
+  package      = "wesanderson",
+  palette      = "Darjeeling2",
+  ggtheme = theme_pubclean(),
+  bf.message=FALSE,
+  messages=FALSE,
+  xlab = "",
+  type='parametric'
+  )
+
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+g1$labels$subtitle[[4]] <- NULL
+
+g1 + theme(legend.position = 'right')
+
+ggsave('hypomagnesemia.png', width = 6, height=4)
+```
+
+## Age \~ Mutation Type
+
+```{r}
+age_mut_plot <- HNF1B_simple %>%
+  select(mutacijos_tipas, age_pre) %>%
+  na.omit() %>%
+  filter(mutacijos_tipas %in% c('cdeletion', 'wdeletion','pdeletion','missense','nonsense', 'splice')) %>%
+  group_by(mutacijos_tipas) %>%
+  ggbetweenstats(data=., x = mutacijos_tipas, y=age_pre, 
+                 p.adjust.method = 'bonferroni', 
+                 bf.message = FALSE, 
+                 ggtheme = theme_pubr(), 
+                 palette = 'default_jco', 
+                 package='ggsci', 
+                 type = 'parametric', 
+                 var.equal = TRUE, 
+                 xlab = "", 
+                 ylab = 'Age at diagnosis',
+                 # ggplot.component = list(ggplot2::scale_y_continuous(sec.axis = ggplot2::dup_axis(name = "Pairwise test: Student's t")))
+  )
+
+age_mut_plot$labels$subtitle[[4]] <- NULL
+age_mut_plot$labels$subtitle[[4]] <- NULL
+age_mut_plot$labels$subtitle[[4]] <- NULL
+
+age_mut_plot
+
+ggsave('age_mutation.png', width = 8, height = 7)
+```
